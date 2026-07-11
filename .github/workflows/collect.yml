@@ -24,6 +24,7 @@ jobs:
         env:
           BM_TOKEN: ${{ secrets.BM_TOKEN }}
           SNAP_KEY: ${{ secrets.SNAP_KEY }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
         run: |
           set -u
           TS=$(date -u +%Y-%m-%dT%H%M%SZ)
@@ -37,8 +38,20 @@ jobs:
             echo "FAIL: unexpected response"; head -c 300 resp.json || true; exit 1
           fi
           mkdir -p snapshots
-          gzip -c resp.json | openssl enc -aes-256-cbc -md sha256 -pass env:SNAP_KEY \
-            > "snapshots/eu-east_${TS}.json.gz.enc"
+          gzip -c resp.json > snapshot.json.gz
+          openssl enc -aes-256-cbc -md sha256 -pass env:SNAP_KEY \
+            -in snapshot.json.gz -out "snapshots/eu-east_${TS}.json.gz.enc"
+
+          # v2 収集統一(2026-07-11): 同じ生データを POST /ingest にも転送(BMは二重に叩かない)。
+          # ベストエフォート・失敗してもコミット経路(v1)には影響させない。secret未設定ならno-op。
+          if [ -n "${INGEST_TOKEN:-}" ]; then
+            code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $INGEST_TOKEN" \
+              -H "Content-Encoding: gzip" \
+              --data-binary "@snapshot.json.gz" \
+              "https://v2.rustwatch.nanya-nen.com/ingest?label=eu-east&captured_at=${TS}")
+            echo "ingest http=$code"
+          fi
 
       - name: commit
         run: |
