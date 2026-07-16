@@ -34,7 +34,9 @@ jobs:
             'https://api.battlemetrics.com/servers/33856379?include=player')
           sz=$(stat -c%s resp.json 2>/dev/null || echo 0)
           echo "http=$http size=$sz"
-          if [ "$http" != "200" ] || [ "$sz" -lt 100000 ]; then
+          # サイズ閾値は使わない(低人口時間帯は正常応答でも小さく、100KB閾値が誤FAILした実績あり)。
+          # 有効なJSONで data.attributes.players を持つことをもって正常応答と判定する。
+          if [ "$http" != "200" ] || ! jq -e '.data.attributes.players' resp.json > /dev/null; then
             echo "FAIL: unexpected response"; head -c 300 resp.json || true; exit 1
           fi
           mkdir -p snapshots
